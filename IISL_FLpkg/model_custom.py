@@ -1,6 +1,6 @@
 import tensorflow as tf
 from tensorflow import keras
-import random
+import math
 
 from .quantize import quantize
 
@@ -129,7 +129,6 @@ class CustomModelList(list):
       # # Return a dict mapping metric names to current value
       return loss_avg, sca_metric_avg
 
-
     def rqfed_avg(self, x, y, rq_central_server, prob):
       trainable_vars = rq_central_server.model.trainable_variables
       loss_avg = 0
@@ -225,19 +224,26 @@ class CustomModel(keras.Model):
       return gradients, loss.numpy(), result_metric
     
     def train_step_prox(self, x, y, metric, former_weight):
-      u = 0.5
-      loss_fn = keras.losses.SparseCategoricalCrossentropy() 
+      loss_fn = keras.losses.SparseCategoricalCrossentropy()
         # Unpack the data. Its structure depends on your model and
         # on what you pass to `fit()`.
+      proximal = tf.Variable(0.0)
+      
       with tf.GradientTape() as tape:
         y_pred = self.model(x, training=True)  # Forward pass
         # Compute the loss value
         # (the loss function is configured in `compile()`)
         loss = loss_fn(y, y_pred)
+        trainable_vars = self.model.trainable_variables
+        
+        for i in range (len(trainable_vars)):
+          print(trainable_vars[i] - former_weight[i])
+          proximal = proximal + (tf.norm(trainable_vars[i] - former_weight[i], axis=None) ** 2)
+        proximal = math.sqrt(proximal)
+        loss += proximal
+        
       # Compute gradients
-      trainable_vars = self.model.trainable_variables
-      proximal = 10*u/2*keras.losses.mean_squared_error(trainable_vars, former_weight)
-      gradients = tape.gradient(loss+proximal, trainable_vars)
+      gradients = tape.gradient(loss, trainable_vars)
       # # Update weights
       # self.optimizer.apply_gradients(zip(gradients, trainable_vars))
       # # Update metrics (includes the metric that tracks the loss)
